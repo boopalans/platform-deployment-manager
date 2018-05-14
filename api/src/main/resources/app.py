@@ -270,9 +270,9 @@ class ApplicationHandler(BaseHandler):
             return
 
         if 'user' in request_body:
-            self.send_client_error("Invalid request body. User should be passed in URI")
+            self.send_client_error("Invalid request body. User should be passed as URI parameter user.name")
             return
-        user_name = self.get_argument("user")
+        user_name = self.get_argument("user.name")
         def do_call():
             request_body.update({'user': user_name})
             dm.create_application(request_body['package'], aname, request_body)
