@@ -20,6 +20,7 @@ License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF 
 either express or implied.
 """
 
+import pwd
 import tarfile
 import os
 import json
@@ -52,6 +53,12 @@ class ApplicationCreator(object):
         if not re.match('^[a-zA-Z0-9_-]+$', application_name):
             raise FailedCreation('Application name %s may only contain a-z A-Z 0-9 - _' % application_name)
 
+        user_name = property_overrides['user']
+        try:
+            pwd.getpwnam(user_name)
+        except KeyError:
+            raise FailedCreation('User %s does not exist. Verify that this user account exists on the machine running the deployment manager.' % user_name)
+
         stage_path = self._stage_package(package_data_path)
 
         # create each class of components in the package, aggregating any
@@ -62,6 +69,7 @@ class ApplicationCreator(object):
                 creator = self._load_creator(component_type)
                 result = creator.create_components(stage_path,
                                                    application_name,
+                                                   user_name,
                                                    components,
                                                    property_overrides.get(component_type))
                 create_metadata[component_type] = result
@@ -75,14 +83,19 @@ class ApplicationCreator(object):
 
         logging.debug("destroy_application: %s %s", application_name, application_create_data)
 
+        app_hdfs_root = None
         for component_type, component_create_data in application_create_data.iteritems():
             creator = self._load_creator(component_type)
             creator.destroy_components(application_name, component_create_data)
+            if component_create_data and 'application_hdfs_root' in component_create_data[0]:
+                app_hdfs_root = component_create_data[0]['application_hdfs_root']
 
         local_path = '/opt/%s/%s/' % (self._service, application_name)
         if os.path.isdir(local_path):
             os.rmdir(local_path)
-        self._hdfs_client.remove('/user/%s' % application_name, recursive=False)
+
+        if app_hdfs_root is not None:
+            self._hdfs_client.remove(app_hdfs_root, recursive=False)
 
     def start_application(self, application_name, application_create_data):
 
@@ -109,10 +122,10 @@ class ApplicationCreator(object):
         for component_type, component_metadata in package_metadata['component_types'].iteritems():
             creator = self._load_creator(component_type)
             validation_errors = creator.validate_components(component_metadata)
-            if len(validation_errors) > 0:
+            if validation_errors:
                 result[component_type] = validation_errors
 
-        if len(result) > 0:
+        if result:
             raise FailedValidation(result)
 
     def _validate_name(self, package_name, package_metadata):
@@ -142,7 +155,7 @@ class ApplicationCreator(object):
 
     def _load_creator(self, component_type):
 
-        print "_load_creator", component_type
+        logging.debug("_load_creator %s", component_type)
 
         creator = self._component_creators.get(component_type)
 

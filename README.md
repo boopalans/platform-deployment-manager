@@ -25,7 +25,7 @@ HTTP and Python bindings are provided for these APIs.
 
 ## Connecting
 
-By default, the Deployment Manager is installed on `edge` node o. In order to access it go to: http://[cluster-name]-cdh-edge:5000
+By default, the Deployment Manager is installed on the `edge` node. To access the API use: http://[cluster-name]-cdh-edge:5000
 
 ## Repository ##
 
@@ -41,7 +41,7 @@ The Application Creator handles the creation and control of applications on beha
 
 ## Creator ##
 
-Each component type is associated with a subclass of Creator. Each Creator implements the specific steps necessary to perform the following functions: 
+Each component type is associated with a subclass of Creator. Each Creator implements the specific steps necessary to perform the following functions:
 
 ### Validation ###
 
@@ -58,7 +58,6 @@ Applications may be paused and restarted. This leaves all the installed componen
 ### Undeployment ###
 
 Each Creator implements a specific set of steps to uninstall components of its associated type. The Creator is passed the application data associated with the package and component and uses this to execute those steps.
-
 
 # Requirements
 
@@ -82,6 +81,7 @@ To build the Deployment Manager, change to the `api` directory, which contains t
   * [GET /applications](#list-all-applications)
   * [GET /packages/_package_/applications](#list-applications-that-have-been-created-from-package)
   * [GET /applications/_application_/status](#get-the-status-for-application)
+  * [GET /applications/_application_/summary](#get-the-summary-status-for-application)
   * [POST /applications/_application_/start](#start-application)
   * [POST /applications/_application_/stop](#stop-application)
   * [GET /applications/_application_](#get-full-information-for-application)
@@ -96,11 +96,15 @@ To build the Deployment Manager, change to the `api` directory, which contains t
 
 ?recency=n may be used to control how many versions of each package are listed, by default recency=1
 ````
-GET /repository/packages
+GET /repository/packages?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 [
@@ -117,12 +121,16 @@ Example response:
 ## Packages API
 
 ### List packages currently deployed to the cluster
-````    
-GET /packages
+````
+GET /packages?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 ["spark-batch-example-app-1.0.23"]
@@ -130,11 +138,15 @@ Example response:
 
 ### Get the status for _package_
 ````
-GET /packages/<package>/status
+GET /packages/<package>/status?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 {"status": "DEPLOYED", "information": "human readable error message or other information about this status"}
@@ -148,17 +160,22 @@ UNDEPLOYING
 
 ### Get full information for _package_
 ````
-GET /packages/<package>
+GET /packages/<package>?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 {
 	"status": "DEPLOYED",
 	"version": "1.0.23",
 	"name": "spark-batch-example-app",
+	"user": "who-deployed-this",
 	"defaults": {
 		"oozie": {
 			"example": {
@@ -178,34 +195,46 @@ Example response:
 
 ### Deploy _package_ to the cluster
 ````
-PUT /packages/<package>
+PUT /packages/<package>?user.name=<username>
 
 Response Codes:
 202 - Accepted, poll /packages/<package>/status for status
+403 - Unauthorised user
 404 - Package not found in repository
 409 - Package already deployed
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 ````
 
 ### Undeploy _package_ from the cluster
 ````
-DELETE /packages/<package>
+DELETE /packages/<package>?user.name=<username>
 
 Response Codes:
 202 - Accepted, poll /packages/<package>/status for status
+403 - Unauthorised user
 404 - Package not deployed
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 ````
 
 ## Applications API
 
 ### List all applications
 ````
-GET /applications
+GET /applications?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 ["spark-batch-example-app-instance"]
@@ -213,11 +242,15 @@ Example response:
 
 ### List applications that have been created from _package_
 ````
-GET /packages/<package>/applications
+GET /packages/<package>/applications?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 ["spark-batch-example-app-instance"]
@@ -225,12 +258,16 @@ Example response:
 
 ### Get the status for _application_
 ````
-GET /applications/<application>/status
+GET /applications/<application>/status?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 {"status": "STARTED", "information": "human readible error message or other information about this status"}
@@ -247,12 +284,16 @@ DESTROYING
 
 ### Get run-time details for _application_
 ````
-GET /applications/<application>/detail
+GET /applications/<application>/detail?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 {
         "yarn_applications": {
@@ -270,39 +311,142 @@ Response Codes:
 
 ````
 
+### Get the summary status for _application_
+````
+GET /applications/<application>/summary?user.name=<username>
+
+Response Codes:
+200 - OK
+403 - Unauthorised user
+404 - Application not known
+500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
+````
+
+### Summary status in case of oozie component
+
+````
+{
+  "oozie-application": {
+    "aggregate_status": "STARTED_RUNNING_WITH_ERRORS",
+    "oozie-1": {
+      "status": "WARN",
+      "aggregate_status": "STARTED_RUNNING_WITH_ERRORS",
+      "actions": {
+        "workflow-1": {
+          "status": "WARN",
+          "oozieId": "0000004-171229054340125-oozie-oozi-W",
+          "actions": {
+            "subworkflow-1": {
+              "status": "WARN",
+              "oozieId": "0000005-171229054340125-oozie-oozi-W",
+              "actions": {
+                "job-2": {
+                  "status": "ERROR",
+                  "information": "No JSON object could be decoded",
+                  "applicationType": "SPARK",
+                  "name": "process",
+                  "yarnId": "application_1514526198433_0022"
+                },
+                "job-1": {
+                  "status": "OK",
+                  "information": null,
+                  "applicationType": "MAPREDUCE",
+                  "name": "download",
+                  "yarnId": "application_1514526198433_0019"
+                }
+              },
+              "name": "oozie-application-subworkflow"
+            }
+          },
+          "name": "oozie-application-workflow"
+        }
+      },
+      "oozieId": "0000003-171229054340125-oozie-oozi-C",
+      "name": "oozie-application-coordinator"
+    }
+  }
+}
+````
+### Summary status in case of spark-streaming component
+````
+{
+  "spark-streaming-application": {
+    "aggregate_status": "STARTED_RUNNING_WITH_NO_ERRORS",
+    "sparkStreaming-1": {
+      "information": {
+        "stageSummary": {
+          "active": 0,
+          "number_of_stages": 128,
+          "complete": 128,
+          "pending": 0,
+          "failed": 0
+        },
+        "jobSummary": {
+          "unknown": 0,
+          "number_of_jobs": 32,
+          "running": 0,
+          "succeeded": 32,
+          "failed": 0
+        }
+      },
+      "aggregate_status": "STARTED_RUNNING_WITH_NO_ERRORS",
+      "name": "spark-streaming-application-example-job",
+      "yarnId": "application_1514526198433_0069"
+    }
+  }
+}
+````
+
 ### Start _application_
 ````
-POST /applications/<application>/start
+POST /applications/<application>/start?user.name=<username>
 
 Response Codes:
 202 - Accepted, poll /applications/<application>/status for status
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 ````
 
 ### Stop _application_
 ````
-POST /applications/<application>/stop
+POST /applications/<application>/stop?user.name=<username>
 
 Response Codes:
 202 - Accepted, poll /applications/<application>/status for status
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 ````
 
 ### Get full information for _application_
 ````
-GET /applications/<application>
+GET /applications/<application>?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 {
 	"status": "CREATED",
 	"overrides": {
+        "user": "somebody",
+		"package_name": "spark-batch-example-app-1.0.23",
 		"oozie": {
 			"example": {
 				"executors_num": "5"
@@ -331,7 +475,7 @@ Example response:
 ### Create _application_ from _package_
 
 ````
-PUT /applications/<application>
+PUT /applications/<application>?user.name=<username>
 {
 	"package": "<package>",
 	"<componentType>": {
@@ -344,9 +488,13 @@ PUT /applications/<application>
 Response Codes:
 202 - Accepted, poll /applications/<application>/status for status
 400 - Request body failed validation
+403 - Unauthorised user
 404 - Package not found
 409 - Application already exists
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example body:
 {
@@ -363,22 +511,30 @@ Package is mandatory, property settings are optional
 
 ### Destroy _application_
 ````
-DELETE /applications/<application>
+DELETE /applications/<application>?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 404 - Application not known
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 ````
 
 ## Environment Endpoints API
 ### List environment variables known to the deployment manager
 ````
-GET /environment/endpoints
+GET /environment/endpoints?user.name=<username>
 
 Response Codes:
 200 - OK
+403 - Unauthorised user
 500 - Server Error
+
+Query Parameters:
+user.name - User name to run this command as. Should have permissions to perform the action as defined in authorizer_rules.yaml. 
 
 Example response:
 {"zookeeper_port": "2181", "cluster_root_user": "cloud-user", ... }
@@ -386,6 +542,11 @@ Example response:
 # Deployment Manager Variables #
 
 The following variables are made available for use in the configuration files for every component and injected as previously described.
+
+## Application Variables ##
+````
+application_user        The user ID that this application's components will run as
+````
 
 ## Component Variables ##
 ````
@@ -399,6 +560,7 @@ hdfspath_path_name      generated from entries in hdfs.json
 ## Environment Variables ##
 These can be obtained with the [environment endpoints API](#environment-endpoints-api)
 ````
+environment_app_packages_hdfs_path    /pnda/deployment/app_packages
 environment_hadoop_manager_host       192.168.1.2
 environment_hadoop_manager_password   admin
 environment_hadoop_manager_username   admin
@@ -418,7 +580,7 @@ environment_name_node                   hdfs://cluster-cdh-mgr1:8020
 environment_namespace                   platform_app
 environment_oozie_uri                   http://cluster-cdh-mgr1:11000/oozie
 environment_opentsdb                    192.168.1.6:4242
-environment_queue_name                  default
+environment_queue_policy                /opt/pnda/rm-wrapper/yarn-policy.sh
 environment_webhdfs_host                cluster-cdh-mgr1
 environment_webhdfs_port                50070
 environment_yarn_node_managers          cluster-cdh-dn0
@@ -429,6 +591,25 @@ environment_zookeeper_port              2181
 environment_zookeeper_quorum            cluster-cdh-mgr1
 ````
 
+## Spark Version Selection for Oozie and Spark Streaming ##
+Both Spark streaming and Oozie components can be configured to use either Spark1 or Spark2. This may be set by including `spark_version` in properties.json and setting it to `1` or `2`. It defaults to Spark1 if `spark_version` is not included.
+
+````
+component_spark_version            major version of spark to use. Set to '1' or '2'. Only applicable to HDP clusters
+````
+
+## Spark Streaming Specific Variables ##
+The following varibles are only injected for Spark streaming components. They may be overridden in properties.json, for example to override `component_spark_version`, include `spark_version` in properties.json.
+
+````
+component_spark_submit_args        additional arguments to spark-submit
+component_respawn_type             whether to restart the process when it exits. Valid values are always, no, on-success, on-failure, on-abnormal, on-watchdog or on-abort. Refer to the systemd documentation for more information about each of these.
+component_respawn_timeout_sec      used with component_respawn_type to set how long to wait (in seconds) before restarting the process when it exits.
+(java only) component_main_jar     the jar containing the job code
+(python only) component_main_py    the python file containing the job code
+(python only) component_py_files   additional python files to pass to spark-submit
+````
+
 ## Oozie Specific Variables ##
 The following varibles are only injected for Oozie components.
 
@@ -436,8 +617,10 @@ The following varibles are only injected for Oozie components.
 component_end                  2016-03-31T17:07Z
 component_start                2016-03-24T17:07Z
 mapreduce.job.user.name        hdfs
+mapreduce.job.queuename        root.applications.prod
 oozie.coord.application.path   hdfs://cluster-cdh-mgr1:8020/user/application_id/component_name/coordinator.xml
-oozie.libpath                  /user/deployment/platform
+oozie.libpath                  /pnda/deployment/platform
 oozie.use.system.libpath       true
-user.name                      hdfs
-```` 
+user.name                      prod1
+````
+

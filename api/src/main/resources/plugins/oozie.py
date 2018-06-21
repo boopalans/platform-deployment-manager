@@ -22,19 +22,21 @@ either express or implied.
 
 # pylint: disable=C0103
 
+import os
 import json
 import logging
 import datetime
+import xml.etree.ElementTree as ElementTree
+import commands
+import shutil
+import traceback
 import requests
 
 import deployer_utils
 from plugins.base_creator import Creator
 from exceptiondef import FailedCreation
 
-
 class OozieCreator(Creator):
-
-    OOZIE_USER_NAME = 'hdfs'
 
     def validate_component(self, component):
         errors = []
@@ -66,10 +68,11 @@ class OozieCreator(Creator):
         logging.debug("stop_component: %s %s", application_name, json.dumps(create_data))
         self._stop_oozie(create_data['job_handle'], create_data['application_user'])
 
-    def create_component(self, staged_component_path, application_name, component, properties):
+    def create_component(self, staged_component_path, application_name, user_name, component, properties):
         logging.debug(
-            "create_component: %s %s %s",
+            "create_component: %s %s %s %s",
             application_name,
+            user_name,
             json.dumps(component),
             properties)
 
@@ -93,7 +96,17 @@ class OozieCreator(Creator):
         # Oozie ShareLib - supports actions
         properties['oozie.use.system.libpath'] = 'true'
         # platform shared libs e.g. hbase
-        properties['oozie.libpath'] = '/user/deployment/platform'
+        properties['oozie.libpath'] = '/pnda/deployment/platform'
+        # For spark2 add a special setting to select spark2
+        if 'component_spark_version' in properties and properties['component_spark_version'] == '2':
+            properties['oozie.action.sharelib.for.spark'] = 'spark2'
+
+        # insert default queue selection
+        ret, res = commands.getstatusoutput('sudo -u %s %s' % (properties['application_user'], self._environment['queue_policy']))
+        if ret == 0:
+            properties['mapreduce.job.queuename'] = res
+        else:
+            logging.error("Policy: ERROR %s: %s", ret, res)
 
         # insert reference to coordinator xor workflow
         if 'coordinator.xml' in component['component_detail']:
@@ -104,14 +117,98 @@ class OozieCreator(Creator):
         properties[def_path] = '%s/%s' % (self._environment['name_node'], remote_path)
 
         # deploy everything to various hadoop services
-        undeploy = self._deploy_to_hadoop(properties, staged_component_path, remote_path, properties['application_user'])
+        undeploy = self._deploy_to_hadoop(component, properties, staged_component_path, remote_path, properties['application_user'])
 
         # return something that can be used to undeploy later
         return {'job_handle': undeploy['id'],
                 'component_hdfs_root': properties['component_hdfs_root'],
                 'application_user': properties['application_user']}
 
-    def _deploy_to_hadoop(self, properties, staged_component_path, remote_path, application_user, exclude=None):
+    def _setup_queue_config(self, component, staged_component_path, properties):
+        # Add queue config into the default config if none is defined.
+        if 'mapreduce.job.queuename' in properties:
+            defaults = {'mapreduce.job.queuename':properties['mapreduce.job.queuename']}
+            try:
+                with open('%s/config-default.xml' % staged_component_path, 'r') as config_default_file:
+                    data = config_default_file.read()
+            except:
+                logging.debug('No config-default.xml is detected.')
+                data = None
+
+            if data is None:
+                logging.debug('Creating config-default.xml to inject mapreduce.job.queuename property.')
+                with open('%s/config-default.xml' % staged_component_path, 'w') as config_default_file:
+                    config_default_file.write(deployer_utils.dict_to_xml(defaults))
+            else:
+                prop = None
+                root = None
+                try:
+                    root = ElementTree.fromstring(data)
+                    prop = root.find("./property/[name='mapreduce.job.queuename']")
+                except:
+                    logging.error('Failed to parse the config-default.xml data.')
+
+                if root is not None:
+                    if prop is not None:
+                        try:
+                            queue = prop.find('value').text
+                            logging.debug('mapreduce.job.queuename is already set: %s', queue)
+                        except:
+                            logging.error('config-default.xml [\'mapred.queue.names\'] has no value.')
+
+                    else:
+                        logging.debug('adding mapred.queue.names in config-default.xml')
+                        prop = ElementTree.SubElement(root, 'property')
+                        ElementTree.SubElement(prop, 'name').text = 'mapreduce.job.queuename'
+                        ElementTree.SubElement(prop, 'value').text = properties['mapreduce.job.queuename']
+                        data = ElementTree.tostring(root)
+                        with open('%s/config-default.xml' % staged_component_path, 'w') as config_default_file:
+                            config_default_file.write(data)
+
+            file_list = [file_name for file_name in component['component_detail'] if os.path.isfile('%s/%s' % (staged_component_path, file_name))]
+            # find workflow.xml files
+            for afile in file_list:
+                workflow_modified = False
+                file_path = '%s/%s' % (staged_component_path, afile)
+                with open(file_path, 'r') as component_file:
+                    workflow_xml = component_file.read()
+                    if 'uri:oozie:workflow' not in workflow_xml:
+                        continue
+                logging.debug("Found workflow file %s", file_path)
+                # copy config-default.xml into this directory
+                if os.path.dirname(file_path) != staged_component_path:
+                    shutil.copyfile('%s/config-default.xml' % staged_component_path, '%s/config-default.xml' % os.path.dirname(file_path))
+
+                # set the spark opts --queue so spark jobs are put in the right queue
+                spark_action_index = 0
+                while spark_action_index >= 0:
+                    spark_action_index = workflow_xml.find('<spark ', spark_action_index+1)
+                    spark_end_index = workflow_xml.find('</spark>', spark_action_index)
+                    jar_end_index = workflow_xml.find('</jar>', spark_action_index, spark_end_index)
+                    opts_index = workflow_xml.find('<spark-opts>', spark_action_index, spark_end_index)
+                    opts_end_index = workflow_xml.find('</spark-opts>', opts_index, spark_end_index)
+                    queue_opt_index = workflow_xml.find('--queue ', opts_index, opts_end_index)
+                    if jar_end_index >= 0:
+                        if opts_index < 0:
+                            # we need to add a spark-opts element
+                            split_index = jar_end_index+len('</jar>')
+                            workflow_xml = '%s%s%s' % (workflow_xml[:split_index],
+                                                       '<spark-opts>--queue ${wf:conf("mapreduce.job.queuename")}</spark-opts>',
+                                                       workflow_xml[split_index:])
+                            workflow_modified = True
+                        elif queue_opt_index < 0:
+                            # we need to add a queue opt to the existing spark-opts element
+                            split_index = opts_end_index
+                            workflow_xml = '%s%s%s' % (workflow_xml[:split_index], ' --queue ${wf:conf("mapreduce.job.queuename")}', workflow_xml[split_index:])
+                            workflow_modified = True
+
+                # write out modified workflow if changes were made
+                if workflow_modified:
+                    logging.debug("Writing out modified workflow xml to %s", file_path)
+                    with open(file_path, "w") as workflow_file:
+                        workflow_file.write(workflow_xml)
+
+    def _deploy_to_hadoop(self, component, properties, staged_component_path, remote_path, application_user, exclude=None):
         if exclude is None:
             exclude = []
         exclude.extend(['hdfs.json',
@@ -119,8 +216,15 @@ class OozieCreator(Creator):
                         'properties.json',
                         'application.properties'])
 
+        # setup queue config
+        try:
+            self._setup_queue_config(component, staged_component_path, properties)
+        except Exception as ex:
+            logging.error(traceback.format_exc())
+            raise FailedCreation('Failed to set up yarn queue config: %s' % str(ex))
+
         # stage the component files to hdfs
-        self._hdfs_client.recursive_copy(staged_component_path, remote_path, exclude=exclude)
+        self._hdfs_client.recursive_copy(staged_component_path, remote_path, exclude=exclude, permission=755)
 
         # stage the instantiated job properties back to HDFS - no functional purpose,
         # just helps developers understand what has happened
@@ -168,5 +272,4 @@ class OozieCreator(Creator):
     def _stop_oozie(self, job_id, oozie_user):
         logging.debug("_stop_oozie: %s", job_id)
         oozie_url = '%s/v1/job/%s?action=suspend&user.name=%s' % (self._environment['oozie_uri'], job_id, oozie_user)
-        print oozie_url
         requests.put(oozie_url)

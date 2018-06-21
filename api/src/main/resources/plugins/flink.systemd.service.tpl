@@ -7,7 +7,7 @@ User=${application_user}
 WorkingDirectory=/opt/${environment_namespace}/${component_application}/${component_name}/
 ExecStartPre=/opt/${environment_namespace}/${component_application}/${component_name}/yarn-kill.py
 ExecStopPost=/opt/${environment_namespace}/${component_application}/${component_name}/yarn-kill.py
-Environment=SPARK_MAJOR_VERSION=${component_spark_version}
-ExecStart=${environment_spark_submit} --driver-java-options "-Dlog4j.configuration=file:////opt/${environment_namespace}/${component_application}/${component_name}/log4j.properties" --class ${component_main_class} --name '${component_job_name}' --master yarn-cluster --files log4j.properties ${component_spark_submit_args} ${component_main_jar}
+Environment=FLINK_VERSION=${component_flink_version}
+ExecStart=${environment_flink} run -m  yarn-cluster ${component_flink_config_args} -ynm ${component_job_name} --class ${component_main_class} ${component_main_jar} ${component_application_args}
 Restart=${component_respawn_type}
 RestartSec=${component_respawn_timeout_sec}

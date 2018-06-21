@@ -36,7 +36,6 @@ import logging
 import json
 import string
 import collections
-import getpass
 import requests
 import hbase_descriptor
 import opentsdb_descriptor
@@ -91,11 +90,12 @@ class Creator(object):
         '''
         pass
 
-    def create_component(self, staged_component_path, application_name, component, properties):
+    def create_component(self, staged_component_path, application_name, user_name, component, properties):
         '''
         Creates component of the package of given component type
 
         application_name - name of the application
+        user_name - user to run the application as
         components - a list of component maps following above example structure
         properties - a full map of properties that can be used as needed
 
@@ -145,7 +145,7 @@ class Creator(object):
         '''
         pass
 
-    def _instantiate_properties(self, application_name, component, property_overrides):
+    def _instantiate_properties(self, application_name, user_name, component, property_overrides):
         logging.debug(
             "_instantiate_properties %s %s",
             component,
@@ -166,8 +166,9 @@ class Creator(object):
         props['component_application'] = application_name
         props['component_name'] = component['component_name']
         props['component_job_name'] = '%s-%s-job' % (props['component_application'], props['component_name'])
-        props['component_hdfs_root'] = '/user/%s/%s' % (application_name, component['component_name'])
-        props['application_user'] = self._get_application_user()
+        props['application_hdfs_root'] = '/pnda/system/deployment-manager/applications/%s/%s' % (user_name, application_name)
+        props['component_hdfs_root'] = '%s/%s' % (props['application_hdfs_root'], component['component_name'])
+        props['application_user'] = user_name
         return props
 
     def _fill_properties(self, local_file, props):
@@ -233,18 +234,19 @@ class Creator(object):
 
         return result
 
-    def create_components(self, stage_path, application_name, components,
+    def create_components(self, stage_path, application_name, user_name, components,
                           components_overrides):
         results = []
         for component_name, component in components.iteritems():
             staged_component_path = '%s/%s' % (stage_path, component['component_path'])
             overrides = components_overrides.get(component_name) if components_overrides is not None else {}
             overrides = {} if overrides is None else overrides
-            merged_props = self._instantiate_properties(application_name, component, overrides)
+            merged_props = self._instantiate_properties(application_name, user_name, component, overrides)
             descriptor_result = self._create_optional_descriptors(staged_component_path, component, merged_props)
             self._auto_fill_app_properties(staged_component_path, merged_props)
-            result = self.create_component(staged_component_path, application_name, component, merged_props)
+            result = self.create_component(staged_component_path, application_name, user_name, component, merged_props)
             result['component_name'] = component_name
+            result['application_hdfs_root'] = merged_props['application_hdfs_root']
             result['component_job_name'] = merged_props['component_job_name']
             result['descriptors'] = descriptor_result
             results.append(result)
@@ -271,7 +273,7 @@ class Creator(object):
         result = {}
         for component_name, component in components.iteritems():
             validation_errors = self.validate_component(component)
-            if len(validation_errors) > 0:
+            if validation_errors:
                 result[component_name] = validation_errors
         return result
 
@@ -329,10 +331,3 @@ class Creator(object):
                     if result is None or self._get_yarn_start_time(app) > self._get_yarn_start_time(result):
                         result = app
         return result
-
-    def _get_application_user(self):
-        application_user = getpass.getuser()
-        # if running as root, make sure to start the application under a different user.
-        if application_user == 'root':
-            application_user = self._environment['application_default_user']
-        return application_user
